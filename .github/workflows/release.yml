@@ -1,0 +1,127 @@
+name: Publish release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build release archives
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - run: npm --prefix web ci
+      - run: npm --prefix web run build
+      - name: Install Pandoc for Word integration tests
+        uses: pandoc/actions/setup@v1
+        with:
+          version: '3.8.3'
+      - run: go test ./...
+      - run: node scripts/release.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-archives
+          path: |
+            dist/releases/*.tar.gz
+            dist/releases/SHA256SUMS
+          if-no-files-found: error
+
+  release-assets:
+    name: Upload GitHub Release assets
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          name: release-archives
+          path: release-assets
+      - name: Verify checksums and upload
+        working-directory: release-assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          sha256sum -c SHA256SUMS
+          gh release upload --repo "$GITHUB_REPOSITORY" --clobber -- "$RELEASE_TAG" ./*.tar.gz SHA256SUMS
+
+  container:
+    name: Publish multi-architecture image (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: with-pandoc
+            suffix: ''
+          - target: slim
+            suffix: '-slim'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm64,arm
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/metadata-action@v6
+        id: meta
+        with:
+          images: ghcr.io/${{ github.repository }}
+          flavor: |
+            latest=false
+            suffix=${{ matrix.suffix }}
+          tags: type=ref,event=tag
+          labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: ${{ matrix.target }}
+          platforms: linux/amd64,linux/arm64,linux/386,linux/arm/v7
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=lannoto-release-${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=lannoto-release-${{ matrix.target }}
+      - name: Update the latest tag
+        if: ${{ !github.event.release.prerelease }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          VERSION_IMAGE: ${{ steps.meta.outputs.tags }}
+          IMAGE_SUFFIX: ${{ matrix.suffix }}
+        run: |
+          latest_tag=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json isLatest,tagName --jq '.[] | select(.isLatest) | .tagName')
+          if [[ "$latest_tag" == "$RELEASE_TAG" ]]; then
+            docker buildx imagetools create --tag "${VERSION_IMAGE%:*}:latest${IMAGE_SUFFIX}" "$VERSION_IMAGE"
+          fi

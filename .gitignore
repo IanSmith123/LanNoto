@@ -1,0 +1,10 @@
+web/node_modules/
+internal/webassets/dist/
+web/test-results/
+web/playwright-report/
+dist/
+.lannoto/
+note/
+tests/artifacts/
+web/build.log
+*.exe
