@@ -4,7 +4,7 @@
 
 LanNoto is a self-hosted Markdown workspace for small teams on a local network. Run a single executable or Docker container on one machine, share its address and workspace password, and edit together from your browsers. Notes are saved as plain Markdown files on the host.
 
-[Install](#install) · [Start LanNoto](#start-lannoto) · [Export and portability](#export-and-portability) · [Develop](#develop-lannoto)
+[When to use it](#when-to-use-lannoto) · [Install](#install) · [Start LanNoto](#start-lannoto) · [Export and portability](#export-and-portability) · [Develop](#develop-lannoto)
 
 ![LanNoto's English workspace showing the file tree, a release table, and a rendered Mermaid diagram](docs/images/workspace-en.png)
 
@@ -16,6 +16,19 @@ LanNoto is a self-hosted Markdown workspace for small teams on a local network. 
 - **Add visuals and share.** Paste or drop images and attachments, render Mermaid diagrams, download Markdown or Word, and print to PDF through your browser. Export the whole workspace as a ZIP when you want to share the notes and assets.
 - **Browse attachments.** Preview images, text, and PDFs from the sidebar. Archives ask before downloading. Drag attachments between workspace folders, including `static`.
 - **Work on a local network.** The app bundles its interface and rendering assets. It works on a LAN without internet access and offers English, Simplified Chinese, and a dark theme.
+
+## When to use LanNoto
+
+LanNoto is designed for short writing sessions with a small, trusted team on the same network. Start it for a meeting, workshop, or shared draft, then take the Markdown files and attachments with you. The server, editor, and rendering assets ship in a single executable. Running it directly requires no database service, language runtime, or Docker. Docker is optional, and Word export is the only feature that requires Pandoc.
+
+| Tool | Use case and deployment |
+| --- | --- |
+| **LanNoto** | Temporary LAN writing with a small team. Run one executable and share a workspace password. Notes and attachments are ordinary files on the host. |
+| **HackMD** | Hosted collaborative Markdown with team roles and note sharing controls. The hosted service runs the infrastructure for you. [HackMD team documentation](https://hackmd.io/@docs/what-is-team) |
+| **ShowDoc** | A structured home for API references and team documentation, with project-level access and membership. Self-hosted installs can use Docker or PHP, and ShowDoc ships with SQLite. [ShowDoc project](https://github.com/star7th/showdoc) · [Deployment and storage](https://github.com/star7th/showdoc/blob/master/documentation/en/Development%26Contribution.md) · [Docker guide](https://github.com/star7th/showdoc/blob/master/documentation/en/ByDocker.md) |
+| **HedgeDoc** | A self-hosted collaborative Markdown editor with per-note permissions. Its Docker Compose example includes PostgreSQL, and SQLite is also supported. [HedgeDoc overview](https://hedgedoc.org/) · [Docker guide](https://docs.hedgedoc.org/setup/docker/) · [Database guidance](https://docs.hedgedoc.org/guides/production-ready/#database) |
+
+LanNoto keeps the server footprint small by bundling the frontend and keeping notes, attachments, and history on disk in the workspace. Access is granted at the workspace level. Everyone who signs in with the shared password can edit its notes. For a long-running writing platform, a shared knowledge base, or ongoing per-user and per-document access management, choose a tool with the account and permission model your team needs.
 
 ## Install
 

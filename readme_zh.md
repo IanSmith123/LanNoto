@@ -4,7 +4,7 @@
 
 LanNoto 是给小团队用的局域网 Markdown 笔记软件。在一台电脑上运行可执行文件或 Docker 容器，把访问地址和工作区密码分享给团队，大家就能用浏览器一起编辑。笔记以普通 Markdown 文件保存在主机上。
 
-[安装](#安装) · [启动 LanNoto](#启动-lannoto) · [导出与兼容性](#导出与兼容性) · [继续开发](#继续开发)
+[适用场景与对比](#适用场景与对比) · [安装](#安装) · [启动 LanNoto](#启动-lannoto) · [导出与兼容性](#导出与兼容性) · [继续开发](#继续开发)
 
 ![LanNoto 中文分屏界面，左侧编辑 Markdown 源码，右侧实时预览](docs/images/split-view-zh.png)
 
@@ -16,6 +16,19 @@ LanNoto 是给小团队用的局域网 Markdown 笔记软件。在一台电脑�
 - **插入图表和分享。** 可粘贴或拖入图片及附件，预览 Mermaid 图表，下载 Markdown 或 Word，也可通过浏览器打印为 PDF。工作区可打包为 ZIP 分享。
 - **浏览附件。** 在侧栏预览图片、文本和 PDF，压缩包等文件在确认后下载。附件可以拖入或拖出 `static`，也可以在其他工作区目录之间移动。
 - **在内网使用。** 界面和渲染资源随程序打包，纯内网也能运行。界面支持简体中文、英文和夜间模式。
+
+## 适用场景与对比
+
+LanNoto 面向局域网内的小规模、短期协作写作，比如会议纪要、工作坊记录和临时合写草稿。一台电脑启动服务，团队用浏览器加入，写完即可带走 Markdown 和附件。服务端、编辑器和渲染资源打包为一个可执行文件，直接运行无需数据库服务、额外的语言运行时或 Docker。Docker 可选，只有 Word 导出需要 Pandoc。
+
+| 工具 | 适用场景与部署方式 |
+| --- | --- |
+| **LanNoto** | 小团队临时合写。运行一个可执行文件，分享工作区密码，笔记和附件以普通文件保存在主机上。 |
+| **HackMD** | 托管的多人 Markdown 写作，提供团队角色和笔记分享权限。使用托管版时，由平台维护运行环境。 [HackMD 团队文档](https://hackmd.io/@docs/what-is-team) |
+| **ShowDoc** | 适合维护 API 文档和团队技术资料，支持按项目管理成员和访问权限。自部署可用 Docker 或 PHP，内置 SQLite。 [ShowDoc 项目](https://github.com/star7th/showdoc) · [运行环境与存储](https://github.com/star7th/showdoc/blob/master/documentation/en/Development%26Contribution.md) · [Docker 部署](https://github.com/star7th/showdoc/blob/master/documentation/en/ByDocker.md) |
+| **HedgeDoc** | 自托管的多人 Markdown 编辑器，支持按笔记设置权限。官方 Docker Compose 示例搭配 PostgreSQL，也支持 SQLite。 [HedgeDoc 项目](https://hedgedoc.org/) · [Docker 部署](https://docs.hedgedoc.org/setup/docker/) · [数据库说明](https://docs.hedgedoc.org/guides/production-ready/#database) |
+
+LanNoto 把前端随程序打包，笔记、附件和历史都写入本地工作区，减少了需要常驻的服务和部署开销。权限以工作区为单位，使用同一密码登录的成员都能编辑其中的笔记。长期写作、知识库建设，或需要持续管理成员角色和逐篇权限的团队，更适合使用具备相应账号和权限体系的平台。
 
 ## 安装
 
