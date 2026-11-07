@@ -70,6 +70,7 @@ const english: Record<string, string> = {
   "四边": "margin",
   "图片无法加载": "Image failed to load",
   "空地址": "empty URL",
+  "Markdown 第 {line} 行": "Markdown line {line}",
   "不可恢复内部错误，编辑已停止": "An internal error stopped editing",
   "不可恢复内部错误": "Internal error",
   "文档初始化状态已变化，请重新打开": "Document initialization changed. Reopen this note.",
@@ -187,8 +188,6 @@ const english: Record<string, string> = {
   "连续长页 PDF": "Continuous long PDF",
   "准备中：调整纸张布局": "Adjusting paper layout",
   "连续长页超过 5000 mm，请选择 A4 布局": "This page exceeds 5000 mm. Choose an A4 layout.",
-  "可打印": "Ready to print",
-  "图片没有可打印内容": "Image contains no printable content",
-  "打印图片加载失败，请检查笔记中的资源。": "An image could not be loaded. Check the note resources."
+  "可打印": "Ready to print"
 };
 export function t(message: string): string { return language === 'zh-CN' ? message : english[message] ?? message; }

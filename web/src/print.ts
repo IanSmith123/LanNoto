@@ -1,9 +1,11 @@
 import { t } from './i18n';
 import { Crepe } from '@milkdown/crepe';
-import { headingIdGenerator, codeBlockSchema } from '@milkdown/kit/preset/commonmark';
-import { editorViewCtx, parserCtx } from '@milkdown/kit/core';
+import { headingIdGenerator, codeBlockSchema, imageSchema } from '@milkdown/kit/preset/commonmark';
+import { editorViewCtx, parserCtx, remarkCtx } from '@milkdown/kit/core';
 import { codeBlockConfig } from '@milkdown/kit/component/code-block';
+import { imageBlockSchema } from '@milkdown/kit/component/image-block';
 import { DOMSerializer } from '@milkdown/kit/prose/model';
+import type { Image, ImageReference, Nodes } from 'mdast';
 import { EditorView } from '@codemirror/view';
 import { setCodeMirrorTheme } from '@milkdown/crepe/feature/code-mirror';
 import { codeTheme } from './code-theme';
@@ -13,6 +15,27 @@ export interface PrintSnapshot { filename: string; revision: number; markdown: s
 class ResourceError extends Error {}
 type PaperMode = 'normal' | 'narrow' | 'continuous';
 const mmPerPixel = 25.4 / 96;
+
+function imageLines(tree: Nodes): Map<string, number[]> {
+  const definitions = new Map<string, string>();
+  const references: (Image | ImageReference)[] = [];
+  const visit = (node: Nodes): void => {
+    if (node.type === 'image' || node.type === 'imageReference') references.push(node);
+    else if (node.type === 'definition' && !definitions.has(node.identifier)) definitions.set(node.identifier, node.url);
+    else if ('children' in node) node.children.forEach(visit);
+  };
+  visit(tree);
+  const lines = new Map<string, number[]>();
+  // Consume repeated references in source order with pop().
+  for (const node of references.reverse()) {
+    const url = node.type === 'image' ? node.url : definitions.get(node.identifier);
+    const line = node.position?.start.line;
+    if (url === undefined || line === undefined) continue;
+    const locations = lines.get(url);
+    if (locations) locations.push(line); else lines.set(url, [line]);
+  }
+  return lines;
+}
 
 export class PrintView {
   private readonly root = document.createElement('section');
@@ -68,7 +91,6 @@ export class PrintView {
       [Crepe.Feature.LinkTooltip]: false,
     }, featureConfigs: {
       [Crepe.Feature.CodeMirror]: { previewOnlyByDefault: true, extensions: [EditorView.lineWrapping] },
-      [Crepe.Feature.ImageBlock]: { onImageLoadError: () => { this.resourceError = new ResourceError(t('打印图片加载失败，请检查笔记中的资源。')); this.failed(this.resourceError); } },
     } });
     this.crepe.editor.config((ctx) => ctx.set(headingIdGenerator.key, () => ''));
     // This standalone readonly editor never creates a Y.Doc or WebSocket.
@@ -99,7 +121,7 @@ export class PrintView {
       });
     });
     this.resize.observe(this.body);
-    void this.prepare().catch((error: unknown) => {
+    void this.prepare(snapshot.markdown).catch((error: unknown) => {
       if (error instanceof DOMException && error.name === 'AbortError') return;
       this.failed(error);
       if (!(error instanceof ResourceError)) this.fatal(error);
@@ -112,12 +134,28 @@ export class PrintView {
     this.status.textContent = `${t('准备失败')}：${error instanceof Error ? error.message : String(error)}`;
     this.status.className = 'error'; console.error(error);
   }
-  private async prepare(): Promise<void> {
+  private async prepare(markdown: string): Promise<void> {
     await this.creating;
     if (this.controller.signal.aborted) return;
     await this.prepareDiagrams();
     if (this.controller.signal.aborted) return;
-    await Promise.all([...this.body.querySelectorAll('img')].map((image) => this.imageReady(image)));
+    const images = this.crepe.editor.action(ctx => {
+      const view = ctx.get(editorViewCtx);
+      const lines = imageLines(ctx.get(remarkCtx).parse(markdown));
+      const inlineImage = imageSchema.type(ctx), blockImage = imageBlockSchema.type(ctx);
+      const resources: { image: HTMLImageElement | null; src: string; line?: number }[] = [];
+      // ProseMirror can use address-less IMG elements as cursor separators.
+      // Validate only images represented by nodes in the print document.
+      view.state.doc.descendants((node, position) => {
+        if (node.type !== inlineImage && node.type !== blockImage) return;
+        const dom = view.nodeDOM(position);
+        const image = dom instanceof HTMLImageElement ? dom : dom instanceof Element ? dom.querySelector('img') : null;
+        const src = String(node.attrs.src);
+        resources.push({ image, src, line: lines.get(src)?.pop() });
+      });
+      return resources;
+    });
+    await Promise.all(images.map(({ image, src, line }) => this.imageReady(image, src, line)));
     await document.fonts.ready;
     document.fonts.forEach((face) => { if (face.status === 'error') throw new ResourceError(`${t('字体加载失败')}：${face.family}`); });
     if (this.resourceError) throw this.resourceError;
@@ -191,15 +229,19 @@ export class PrintView {
     this.status.className = ''; this.status.textContent = t('可打印'); this.print.disabled = false;
     return true;
   }
-  private imageReady(image: HTMLImageElement): Promise<void> {
+  private imageReady(image: HTMLImageElement | null, src: string, line?: number): Promise<void> {
+    const location = line === undefined ? '' : `（${t('Markdown 第 {line} 行').replace('{line}', String(line))}）`;
+    const address = src.trim() || t('空地址');
+    const failed = () => new ResourceError(`${t('图片无法加载')}${location}：${address}`);
+    if (!image || !src.trim()) return Promise.reject(failed());
     return new Promise<void>((resolve, reject) => {
       const signal = this.controller.signal;
       const aborted = () => reject(new DOMException('Print preview closed', 'AbortError'));
       signal.addEventListener('abort', aborted, { once: true });
       void image.decode().then(() => {
         signal.removeEventListener('abort', aborted);
-        if (image.naturalWidth === 0) reject(new ResourceError(t('图片没有可打印内容'))); else resolve();
-      }, () => { signal.removeEventListener('abort', aborted); reject(new ResourceError(`${t('图片无法加载')}：${image.getAttribute('src') || t('空地址')}`)); });
+        if (image.naturalWidth === 0) reject(failed()); else resolve();
+      }, () => { signal.removeEventListener('abort', aborted); reject(failed()); });
     });
   }
   close(): Promise<void> {

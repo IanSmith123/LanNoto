@@ -503,14 +503,14 @@ test('ordinary editing empty paragraphs exports real Word without rewriting save
 });
 
 test('print uses an immutable readonly Crepe snapshot without a new collaboration connection', async ({ page, browser }) => {
-  const filename = '打印快照.md'; const origin = await create(page, filename, '# 打印测试\n\n快照正文。\n\n| 中文表格 | 值 |\n| --- | --- |\n| 测试 | 42 |\n\n```go\nfmt.Println("中文")\n```\n\n$$\nE = mc^2\n$$\n\n![打印图](static/print-image.png)\n');
+  const filename = '打印快照.md'; const origin = await create(page, filename, '# 打印测试\n\n快照正文。[^sample]\n\n| 中文表格 | 值 |\n| --- | --- |\n| 测试 | 42 |\n\n```go\nfmt.Println("中文")\n```\n\n$$\nE = mc^2\n$$\n\n![打印图](static/print-image.png)\n\n[^sample]: 脚注正文。\n');
   const upload = await page.request.post(`/api/notes/${encodeURIComponent(filename)}/assets`, { headers: { Origin: origin }, multipart: { sourceKind: 'file', file: { name: 'print-image.png', mimeType: 'image/png', buffer: await readFile(image) } } }); expect(upload.status()).toBe(200);
   let sockets = 0; page.on('websocket', () => sockets++);
   await open(page, filename); expect(sockets).toBe(1);
   await page.getByRole('button', { name: '打印 / 保存为 PDF' }).click();
   await expect(page.locator('.print-view').getByRole('status')).toHaveText('可打印');
   await expect(page.locator('.print-body')).toContainText('中文表格');
-  await expect(page.locator('.print-body img')).toBeVisible();
+  await expect(page.locator('.print-body img[src]')).toBeVisible();
   await page.emulateMedia({ media: 'print' });
   await expect(page.locator('.print-body .milkdown-image-block')).toHaveCSS('break-inside', 'avoid');
   await page.emulateMedia({ media: 'screen' });
@@ -529,12 +529,24 @@ test('print uses an immutable readonly Crepe snapshot without a new collaboratio
 });
 
 test('print image failure remains visible and does not enable printing', async ({ page }) => {
-  const filename = '打印缺图.md'; await create(page, filename, '# 打印缺图\n\n![missing](static/not-present.png)\n'); await open(page, filename);
+  const filename = '打印缺图.md';
+  await create(page, filename, '# 打印缺图\n\n```md\n![示例](static/not-present.png)\n```\n\n> ![缺图][missing]\n\n[missing]: static/not-present.png\n');
+  await open(page, filename);
   await page.getByRole('button', { name: '打印 / 保存为 PDF' }).click();
-  await expect(page.locator('.print-view').getByRole('status')).toContainText('准备失败');
+  await expect(page.locator('.print-view').getByRole('status')).toHaveText('准备失败：图片无法加载（Markdown 第 7 行）：static/not-present.png');
   await expect(page.locator('.print-view').getByRole('button', { name: '打印', exact: true })).toBeDisabled();
   await page.getByRole('button', { name: '关闭打印预览' }).click();
   await expect(page.locator('#note-editor')).toBeVisible();
+});
+
+test('print reports the Markdown line for an image with an empty address', async ({ page }) => {
+  const filename = '打印图片空地址.md';
+  await create(page, filename, '# 空地址\n\n行内图片 ![待补地址]()\n');
+  await open(page, filename);
+  await page.getByRole('button', { name: '打印 / 保存为 PDF' }).click();
+  const print = page.getByRole('region', { name: '打印预览' });
+  await expect(print.getByRole('status')).toHaveText('准备失败：图片无法加载（Markdown 第 3 行）：空地址');
+  await expect(print.getByRole('button', { name: '打印', exact: true })).toBeDisabled();
 });
 
 test('actual font network failure disables printing and closing restores editing', async ({ page }) => {
