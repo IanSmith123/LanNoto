@@ -1,6 +1,5 @@
 import { diffLines } from 'diff';
-import { APIError, noteAPI, request } from './api';
-import { checked } from './download';
+import { APIError, checked, noteAPI, request } from './api';
 import { t } from './i18n';
 import { language, username } from './preferences';
 import type { Connection } from './sync';

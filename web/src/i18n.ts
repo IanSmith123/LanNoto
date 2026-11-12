@@ -1,5 +1,8 @@
 import { language } from './preferences';
 const english: Record<string, string> = {
+  "请求失败，请稍后重试。": "Request failed. Please try again later.",
+  "重新登录": "Sign in again",
+  "当前文稿和未同步改动保留在本页，登录后自动同步。": "Your note and unsynced edits remain on this page and sync after you sign in.",
   "调整文件列表高度": "Resize the file list",
   "无法打开文件": "Could not open the file",
   "是否下载此文件？": "Download this file?",

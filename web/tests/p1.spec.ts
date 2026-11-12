@@ -305,6 +305,89 @@ test('offline rich edits merge automatically with another online editor', async 
   } finally { await context.close(); }
 });
 
+test('HTML gateway failures during reconnect preserve offline edits and retry automatically', async ({ page }) => {
+  let disconnect: (() => void) | undefined;
+  await page.routeWebSocket('**/ws', socket => {
+    const server = socket.connectToServer();
+    disconnect = () => { socket.close({ code: 1012 }); server.close({ code: 1012 }); };
+  });
+  await login(page);
+  await expect(page.getByRole('status')).toHaveText('已保存');
+  let failures = 0;
+  await page.route('**/api/session', route => {
+    failures++;
+    return route.fulfill({ status: 503, contentType: 'text/html', body: '<h1>Service Unavailable</h1>' });
+  });
+  disconnect?.();
+  await expect.poll(() => failures).toBeGreaterThan(0);
+  await expect(page.getByRole('status')).toContainText('连接中断');
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await page.locator('#note-editor p').first().click();
+  await page.keyboard.press('End');
+  await page.keyboard.insertText('代理恢复后保留');
+  await page.unroute('**/api/session');
+  await expect(page.getByRole('status')).toHaveText('已保存', { timeout: 20000 });
+  await page.reload();
+  await expect(page.getByRole('status')).toHaveText('已保存');
+  await expect(page.locator('#note-editor')).toContainText('代理恢复后保留');
+});
+
+test('plain text download errors remain recoverable without stopping the editor', async ({ page }) => {
+  await login(page);
+  await expect(page.getByRole('status')).toHaveText('已保存');
+  await page.route('**/api/workspace/export', route => route.fulfill({ status: 502, contentType: 'text/plain', body: 'Bad Gateway' }));
+  await page.getByRole('button', { name: '打包导出工作区' }).click();
+  await expect(page.getByRole('alert')).toContainText('502');
+  await expect(page.getByRole('status')).toHaveText('已保存');
+  await expect(page.locator('#note-editor').getByRole('textbox').first()).toHaveAttribute('contenteditable', 'true');
+  await page.unroute('**/api/workspace/export');
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: '打包导出工作区' }).click();
+  expect((await download).suggestedFilename()).toBe('workspace.zip');
+});
+
+for (const trigger of ['reconnect', 'file-list']) test(`session expiry from ${trigger} keeps unconfirmed edits through password retry and reauthentication`, async ({ page }) => {
+  let holdUpdates = false;
+  let disconnect: (() => void) | undefined;
+  await page.routeWebSocket('**/ws', socket => {
+    const server = socket.connectToServer();
+    socket.onMessage(data => { if (!holdUpdates) server.send(data); });
+    disconnect = () => { socket.close({ code: 1012 }); server.close({ code: 1012 }); };
+  });
+  await login(page);
+  await expect(page.getByRole('status')).toHaveText('已保存');
+  holdUpdates = true;
+  await page.locator('#note-editor p').first().click();
+  await page.keyboard.press('End');
+  await page.keyboard.insertText('过期会话未确认的改动😀');
+  await page.keyboard.press('Control+s');
+  await page.context().clearCookies();
+  if (trigger === 'reconnect') disconnect?.();
+  else await page.getByRole('button', { name: '刷新文件列表', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: '重新登录', exact: true });
+  await expect(dialog).toBeVisible({ timeout: 10000 });
+  await expect(page.locator('#note-editor')).toContainText('过期会话未确认的改动😀');
+  await dialog.getByLabel('服务密码').fill('wrong-password');
+  await dialog.getByRole('button', { name: '重新登录', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toContainText('密码错误');
+  await dialog.getByRole('button', { name: '取消', exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  await expect(page.locator('#note-editor').getByRole('textbox').first()).toHaveAttribute('contenteditable', 'true');
+  await page.locator('#note-editor p').first().click();
+  await page.keyboard.press('End');
+  await page.keyboard.insertText('取消后继续写');
+  await page.getByRole('button', { name: '重新连接', exact: true }).click();
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel('服务密码').fill('p1-test-password');
+  holdUpdates = false;
+  await dialog.getByRole('button', { name: '重新登录', exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  await expect(page.getByRole('status')).toHaveText('已保存');
+  await page.reload();
+  await expect(page.getByRole('status')).toHaveText('已保存');
+  await expect(page.locator('#note-editor')).toContainText('过期会话未确认的改动😀取消后继续写');
+});
+
 test('blank paragraphs survive synchronization and remote edits retain the local caret', async ({ page, browser }) => {
   await login(page, '/note/'); await expect(page.getByRole('heading', { name: '你的团队笔记' })).toBeVisible();
   const filename = '空行光标协作.md', origin = new URL(page.url()).origin;

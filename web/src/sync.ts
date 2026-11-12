@@ -77,6 +77,7 @@ export class Connection {
   private attempts = 0;
   private reconnectTimer?: ReturnType<typeof setTimeout>;
   private connecting = false;
+  private awaitingAuthentication = false;
   private flushTimer?: ReturnType<typeof setTimeout>;
   private flushRequest?: string;
   private status = t('正在连接');
@@ -145,7 +146,7 @@ export class Connection {
     if (this.online && !this.stopped) {
       this.status = this.closing ? t('服务正在关闭，保存中') : this.recovering ? t('正在恢复') : this.pending.size > 0 ? t('编辑中，尚有本地未确认更新') : this.saved < this.applied ? t('协作更新已持久化，Markdown 投影待完成') : this.recording ? t('正在保存历史记录') : t('已保存');
     }
-    this.changed({ status: this.status, revision: this.applied, savedRevision: this.saved, pending: this.pending.size, connected: this.online, terminal: this.stopped, manualReconnect: !this.online && !this.stopped && this.attempts >= 10 });
+    this.changed({ status: this.status, revision: this.applied, savedRevision: this.saved, pending: this.pending.size, connected: this.online, terminal: this.stopped, manualReconnect: !this.online && !this.stopped && (this.awaitingAuthentication || this.attempts >= 10) });
     for (const waiter of [...this.waiters]) waiter();
     for (const observer of this.observers) observer();
   }
@@ -159,17 +160,17 @@ export class Connection {
     try { await this.openConnection(); } finally { this.connecting = false; }
   }
   private async openConnection(): Promise<void> {
-    if (this.closed || this.stopped) return;
+    if (this.closed || this.stopped || this.awaitingAuthentication) return;
     try {
       await request('/api/session');
       await request(noteAPI(this.filename));
     } catch (error) {
-      if (error instanceof APIError && error.status === 401) { this.stop(t('会话已过期，请重新登录')); this.authExpired(); return; }
+      if (error instanceof APIError && error.status === 401) { this.authenticationExpired(); return; }
       if (error instanceof APIError && [400, 404, 409].includes(error.status)) { this.stop(error.message); return; }
       if (error instanceof TypeError || (error instanceof APIError && [502, 503, 504].includes(error.status))) { this.disconnected(); return; }
       throw error;
     }
-    if (this.closed) return;
+    if (this.closed || this.stopped || this.awaitingAuthentication) return;
     this.status = this.mounted ? t('正在恢复') : t('正在连接'); this.emit();
     const url = new URL(`${noteAPI(this.filename)}/ws`, location.href); url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const socket = new WebSocket(url);
@@ -188,8 +189,8 @@ export class Connection {
     if (this.closed || this.stopped) return;
     const ids = [...this.editor.awareness.getStates().keys()].filter((id) => id !== this.editor.doc.clientID);
     removeAwarenessStates(this.editor.awareness, ids, remoteOrigin);
-    this.status = this.initialized ? t('连接中断，可本地编辑，恢复后自动同步') : t('已断开，等待连接'); this.emit();
-    if (!this.reconnectTimer) {
+    this.status = this.awaitingAuthentication ? t('会话已过期，请重新登录') : this.initialized ? t('连接中断，可本地编辑，恢复后自动同步') : t('已断开，等待连接'); this.emit();
+    if (!this.awaitingAuthentication && !this.reconnectTimer) {
       this.attempts++;
       this.reconnectTimer = setTimeout(() => {
         this.reconnectTimer = undefined;
@@ -316,7 +317,15 @@ export class Connection {
     });
   }
   abort(message: string): void { this.stop(message); }
-  reconnect(): void { this.attempts = 0; if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = undefined; } void this.connect().catch(this.fatal); }
+  authenticationExpired(): void {
+    if (this.closed || this.stopped) return;
+    this.awaitingAuthentication = true;
+    if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = undefined; }
+    this.socket?.close();
+    this.disconnected();
+    this.authExpired();
+  }
+  reconnect(): void { this.awaitingAuthentication = false; this.attempts = 0; if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = undefined; } void this.connect().catch(this.fatal); }
   private stop(message: string): void {
     this.stopped = true; this.status = message;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);

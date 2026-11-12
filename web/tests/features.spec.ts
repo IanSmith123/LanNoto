@@ -825,7 +825,7 @@ test('Word export embeds Mermaid PNGs and keeps the original Markdown unchanged'
 test('Word Mermaid syntax errors stay recoverable and a corrected diagram exports', async ({ page }) => {
   await create(page, 'Word图表错误恢复.md', '```mermaid\nflowchart LR\nA --> [\n```\n'); await open(page, 'Word图表错误恢复.md');
   await page.getByRole('button', { name: '下载 Word' }).click();
-  await expect(page.getByRole('alert')).toContainText('Mermaid 语法或渲染错误');
+  await expect(page.locator('#operation-error')).toContainText('Mermaid 语法或渲染错误');
   await expect(page.getByRole('status')).toHaveText('已保存');
   await expect(page.getByRole('button', { name: '下载 Word' })).toBeEnabled();
   await page.getByRole('button', { name: '源码', exact: true }).click();

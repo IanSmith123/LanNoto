@@ -1,6 +1,6 @@
 import { t } from './i18n';
 import { language } from './preferences';
-import { APIError, noteAPI } from './api';
+import { APIError, checked, noteAPI } from './api';
 
 type SourceKind = 'file' | 'clipboard-image';
 type UploadSource = SourceKind | 'prompt';
@@ -184,14 +184,12 @@ export class UploadController {
       let response: Response;
       try { response = await fetch(`${noteAPI(this.filename)}/assets`, { method: 'POST', body: form }); }
       catch (error) { if (error instanceof TypeError) throw new APIError(0, 'network_error', '上传失败，连接已中断。'); throw error; }
-      const value: unknown = await response.json();
-      if (!response.ok) {
-        if (typeof value === 'object' && value !== null && 'code' in value && typeof value.code === 'string' && 'message' in value && typeof value.message === 'string') {
-          if (response.status === 409 && value.code === 'already_exists') { file = await resolveConflict(file, ++attempt); sourceKind = 'file'; continue; }
-          throw new APIError(response.status, value.code, value.message);
-        }
-        throw new Error('Invalid upload error response');
+      try { await checked(response); }
+      catch (error) {
+        if (error instanceof APIError && error.status === 409 && error.code === 'already_exists') { file = await resolveConflict(file, ++attempt); sourceKind = 'file'; continue; }
+        throw error;
       }
+      const value: unknown = await response.json();
       if (typeof value !== 'object' || value === null || !('filename' in value) || typeof value.filename !== 'string' || !('url' in value) || typeof value.url !== 'string' || !value.url.startsWith('static/') || !('kind' in value) || (value.kind !== 'image' && value.kind !== 'attachment')) throw new Error('Invalid uploaded asset response');
       this.assetStored();
       return { filename: value.filename, url: value.url, kind: value.kind };

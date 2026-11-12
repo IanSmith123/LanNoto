@@ -1,9 +1,8 @@
 import { t } from './i18n';
-import { APIError, noteAPI } from './api';
+import { APIError, checked, noteAPI } from './api';
 import { PrintView } from './print';
 import type { Connection } from './sync';
 import { download } from './download';
-import { checked } from './download';
 import { wordDiagrams } from './word-diagrams';
 
 export class ExportController {
@@ -42,11 +41,7 @@ export class ExportController {
       const response = await fetch(`${noteAPI(this.connection.filename)}/export`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal, body: JSON.stringify({ format, revision, diagrams }),
       });
-      if (!response.ok) {
-        const value: unknown = await response.json();
-        if (typeof value === 'object' && value !== null && 'code' in value && typeof value.code === 'string' && 'message' in value && typeof value.message === 'string') throw new APIError(response.status, value.code, value.message);
-        throw new Error('Invalid export error response');
-      }
+      await checked(response);
       if (format === 'print') {
         const value: unknown = await response.json();
         if (typeof value !== 'object' || value === null || !('filename' in value) || value.filename !== this.connection.filename || !('revision' in value) || value.revision !== revision || !('markdown' in value) || typeof value.markdown !== 'string') throw new Error('Invalid print snapshot');

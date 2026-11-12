@@ -46,7 +46,7 @@ function action(label: string, handler: () => Promise<void> | void): HTMLButtonE
 }
 function showError(error: unknown): void {
   if (error instanceof APIError) {
-    if (error.status === 401) { void loginPage().catch(fatal); return; }
+    if (error.status === 401) { if (connection) connection.authenticationExpired(); else void loginPage().catch(fatal); return; }
     banner(error.message); return;
   }
   fatal(error);
@@ -63,6 +63,35 @@ function fatal(error: unknown): void {
 }
 window.addEventListener('error', (event) => fatal(event.error));
 window.addEventListener('unhandledrejection', (event) => fatal(event.reason));
+
+function reauthenticate(): void {
+  if (document.getElementById('reauthentication')) return;
+  const active = connection;
+  if (!active) { void loginPage().catch(fatal); return; }
+  const dialog = element('dialog', '', 'upload-source'); dialog.id = 'reauthentication';
+  dialog.setAttribute('aria-label', t('重新登录'));
+  const form = element('form');
+  const label = element('label', t('服务密码'));
+  const input = element('input'); input.type = 'password'; input.autocomplete = 'current-password'; input.required = true; label.append(input);
+  const submit = element('button', t('重新登录')); submit.type = 'submit';
+  const cancel = element('button', t('取消')); cancel.type = 'button'; cancel.addEventListener('click', () => dialog.close());
+  const error = element('p', '', 'error'); error.setAttribute('role', 'alert');
+  form.append(label, submit, cancel, error);
+  dialog.append(element('h2', t('重新登录')), element('p', t('当前文稿和未同步改动保留在本页，登录后自动同步。')), form);
+  dialog.addEventListener('close', () => dialog.remove(), { once: true });
+  form.addEventListener('submit', event => {
+    event.preventDefault(); submit.disabled = true; error.textContent = '';
+    void request('/api/session', 'POST', { password: input.value }).then(() => {
+      dialog.close();
+      if (connection === active) active.reconnect();
+    }).catch((reason: unknown) => {
+      if (reason instanceof APIError) error.textContent = reason.message;
+      else if (reason instanceof TypeError) error.textContent = t('连接中断，请恢复连接后重试');
+      else fatal(reason);
+    }).finally(() => { submit.disabled = false; });
+  });
+  document.body.append(dialog); dialog.showModal(); input.focus();
+}
 
 async function loginPage(): Promise<void> {
   generation++;
@@ -259,7 +288,7 @@ async function workspacePage(): Promise<void> {
       control.disabled = !member.hasCursor;
       control.title = t(member.hasCursor ? '跳转到编辑位置' : '暂时没有可跳转的编辑位置');
     }
-  }, () => { void loginPage().catch(fatal); }, fatal, uploads.image);
+  }, reauthenticate, fatal, uploads.image);
   connection = activeConnection;
   historyController = new HistoryController(activeConnection, showError); toolbar.append(historyController.button);
   exportsController = new ExportController(activeConnection, showError); toolbar.append(exportsController.root);

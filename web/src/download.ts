@@ -1,11 +1,4 @@
-import { APIError } from './api';
-
-export async function checked(response: Response): Promise<Response> {
-  if (response.ok) return response;
-  const value: unknown = await response.json();
-  if (typeof value === 'object' && value !== null && 'code' in value && typeof value.code === 'string' && 'message' in value && typeof value.message === 'string') throw new APIError(response.status, value.code, value.message);
-  throw new Error('Invalid download error response');
-}
+import { checked } from './api';
 export async function download(response: Response, fallback: string): Promise<void> {
   await checked(response);
   const disposition = response.headers.get('Content-Disposition') || '';
